@@ -85,7 +85,8 @@ async def handle_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if ayah_data:
         image_path = generate_quran_image(ayah_data, background, ratio)
         if image_path:
-            await update.message.reply_photo(photo=open(image_path, 'rb'))
+            with open(image_path, 'rb') as image_file:
+                await update.message.reply_photo(photo=image_file)
             await update.message.reply_text(f"Output saved as: {image_path}")
         else:
             await update.message.reply_text("Maafi chahata hoon, image generate nahi ho payi.")
