@@ -1,21 +1,20 @@
-
 import os
 import logging
 from flask import Flask, request, jsonify
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler
 import asyncio
 import traceback
 
 # Bot logic ko yahan import karte hain
 from quran_bot import (
     start,
-    handle_message,
+    handle_ayah_input,
+    handle_background,
+    handle_ratio,
     CHOOSING_AYA,
     CHOOSING_BG,
-    CHOOSING_RATIO,
-    handle_background,
-    handle_ratio
+    CHOOSING_RATIO
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -39,7 +38,7 @@ application = Application.builder().token(BOT_TOKEN).build()
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
-        CHOOSING_AYA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)],
+        CHOOSING_AYA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ayah_input)],
         CHOOSING_BG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_background)],
         CHOOSING_RATIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ratio)],
     },
@@ -47,7 +46,7 @@ conv_handler = ConversationHandler(
 )
 
 application.add_handler(conv_handler)
-application.add_handler(CommandHandler('start', start)) # Fallback
+application.add_handler(CommandHandler('start', start))
 
 async def process_update(update_data):
     """Process a single update from the webhook"""
@@ -65,10 +64,10 @@ def webhook():
     return jsonify({"status": "no data"}), 400
 
 @app.route('/set_webhook')
-async def set_webhook_route():
+def set_webhook_route():
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
     try:
-        await application.bot.set_webhook(url=webhook_url)
+        asyncio.run(application.bot.set_webhook(url=webhook_url))
         return f"Webhook set to {webhook_url}"
     except Exception as e:
         return f"Error setting webhook: {e}"
@@ -80,7 +79,3 @@ def health_check():
 @app.route('/')
 def home():
     return '<h1>Quran Bot is running!</h1>'
-
-# Ensure the webhook is set automatically on startup
-if WEBHOOK_URL:
-    asyncio.run(application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}"))
