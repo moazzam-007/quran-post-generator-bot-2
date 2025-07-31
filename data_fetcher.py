@@ -7,7 +7,7 @@ async def get_ayah_data(surah, ayah):
     """Fetches Ayah data and page number from quran.com API."""
     try:
         # Fetching data
-        api_url = f"https://api.quran.com/api/v4/verses/by_key/{surah}:{ayah}"
+        api_url = f"https://api.quran.com/api/v4/verses/by_key/{surah}:{ayah}?language=en&fields=page_number"
         response = requests.get(api_url)
         response.raise_for_status()
         data = response.json()
