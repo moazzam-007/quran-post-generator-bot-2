@@ -35,27 +35,44 @@ if not WEBHOOK_URL:
     logger.error("WEBHOOK_URL environment variable is not set!")
     raise ValueError("WEBHOOK_URL is required.")
 
-# Application object ko globally banate hain
-application = Application.builder().token(BOT_TOKEN).build()
+# Global application instance
+application = None
 
-# Conversation handler to manage multi-step user interaction
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        CHOOSING_AYA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ayah_input)],
-        CHOOSING_BG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_background)],
-        CHOOSING_RATIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ratio)],
-    },
-    fallbacks=[CommandHandler('start', start)]
-)
-
-application.add_handler(conv_handler)
+def create_application():
+    """Create and initialize the application"""
+    global application
+    if application is None:
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Conversation handler
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("start", start)],
+            states={
+                CHOOSING_AYA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ayah_input)],
+                CHOOSING_BG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_background)],
+                CHOOSING_RATIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ratio)],
+            },
+            fallbacks=[CommandHandler('start', start)]
+        )
+        
+        application.add_handler(conv_handler)
+        
+        # Initialize the application
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.initialize())
+        loop.close()
+        
+        logger.info("Application initialized successfully")
+    
+    return application
 
 async def process_update(update_data):
     """Process a single update from the webhook"""
     try:
-        update = Update.de_json(update_data, application.bot)
-        await application.process_update(update)
+        app_instance = create_application()
+        update = Update.de_json(update_data, app_instance.bot)
+        await app_instance.process_update(update)
     except Exception as e:
         logger.error(f"Error processing update: {e}")
         logger.error(traceback.format_exc())
@@ -75,6 +92,7 @@ def webhook():
         return jsonify({"status": "no data"}), 400
     except Exception as e:
         logger.error(f"Webhook error: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/set_webhook', methods=['GET', 'POST'])
@@ -82,11 +100,15 @@ def set_webhook_route():
     """Set webhook URL"""
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
     try:
+        app_instance = create_application()
+        
         # Create new event loop for webhook setup
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+        loop.run_until_complete(app_instance.bot.set_webhook(url=webhook_url))
         loop.close()
+        
+        logger.info(f"Webhook set to {webhook_url}")
         return f"Webhook set to {webhook_url}"
     except Exception as e:
         logger.error(f"Error setting webhook: {e}")
@@ -98,7 +120,10 @@ def health_check():
 
 @app.route('/')
 def home():
-    return '<h1>Quran Bot is running!</h1>'
+    return '<h1>Quran Bot is running!</h1><p><a href="/set_webhook">Set Webhook</a></p>'
+
+# Initialize application when module is loaded
+create_application()
 
 if __name__ == '__main__':
     # Local development ke liye
