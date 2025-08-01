@@ -31,7 +31,7 @@ if not BOT_TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN environment variable is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is required.")
 
-# Initialize bot application
+# Application object ko globally banate hain, taaki gunicorn isko access kar sake
 application = Application.builder().token(BOT_TOKEN).build()
 
 # Conversation handler to manage multi-step user interaction
@@ -46,7 +46,7 @@ conv_handler = ConversationHandler(
 )
 
 application.add_handler(conv_handler)
-application.add_handler(CommandHandler('start', start))
+application.add_handler(CommandHandler('start', start)) # Fallback
 
 async def process_update(update_data):
     """Process a single update from the webhook"""
@@ -58,16 +58,15 @@ def webhook():
     """Receive and process updates from Telegram"""
     update_data = request.get_json()
     if update_data:
-        # Use asyncio to process the update
         asyncio.run(process_update(update_data))
         return jsonify({"status": "ok"})
     return jsonify({"status": "no data"}), 400
 
 @app.route('/set_webhook')
-def set_webhook_route():
+async def set_webhook_route():
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
     try:
-        asyncio.run(application.bot.set_webhook(url=webhook_url))
+        await application.bot.set_webhook(url=webhook_url)
         return f"Webhook set to {webhook_url}"
     except Exception as e:
         return f"Error setting webhook: {e}"
@@ -79,3 +78,8 @@ def health_check():
 @app.route('/')
 def home():
     return '<h1>Quran Bot is running!</h1>'
+
+if __name__ == '__main__':
+    # Yeh code sirf local run ke liye hai, Render ke liye nahi
+    # Gunicorn isko ignore kar dega
+    asyncio.run(application.run_webhook(listen="0.0.0.0", port=int(os.environ.get("PORT", 5000)), url_path=BOT_TOKEN))
