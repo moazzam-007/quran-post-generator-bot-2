@@ -31,7 +31,11 @@ if not BOT_TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN environment variable is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is required.")
 
-# Application object ko globally banate hain, taaki gunicorn isko access kar sake
+if not WEBHOOK_URL:
+    logger.error("WEBHOOK_URL environment variable is not set!")
+    raise ValueError("WEBHOOK_URL is required.")
+
+# Application object ko globally banate hain
 application = Application.builder().token(BOT_TOKEN).build()
 
 # Conversation handler to manage multi-step user interaction
@@ -46,40 +50,56 @@ conv_handler = ConversationHandler(
 )
 
 application.add_handler(conv_handler)
-application.add_handler(CommandHandler('start', start)) # Fallback
 
 async def process_update(update_data):
     """Process a single update from the webhook"""
-    update = Update.de_json(update_data, application.bot)
-    await application.process_update(update)
+    try:
+        update = Update.de_json(update_data, application.bot)
+        await application.process_update(update)
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
+        logger.error(traceback.format_exc())
 
 @app.route("/" + BOT_TOKEN, methods=["POST"])
 def webhook():
     """Receive and process updates from Telegram"""
-    update_data = request.get_json()
-    if update_data:
-        asyncio.run(process_update(update_data))
-        return jsonify({"status": "ok"})
-    return jsonify({"status": "no data"}), 400
+    try:
+        update_data = request.get_json()
+        if update_data:
+            # Create new event loop for this request
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(process_update(update_data))
+            loop.close()
+            return jsonify({"status": "ok"})
+        return jsonify({"status": "no data"}), 400
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/set_webhook')
-async def set_webhook_route():
+@app.route('/set_webhook', methods=['GET', 'POST'])
+def set_webhook_route():
+    """Set webhook URL"""
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
     try:
-        await application.bot.set_webhook(url=webhook_url)
+        # Create new event loop for webhook setup
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+        loop.close()
         return f"Webhook set to {webhook_url}"
     except Exception as e:
-        return f"Error setting webhook: {e}"
+        logger.error(f"Error setting webhook: {e}")
+        return f"Error setting webhook: {e}", 500
 
 @app.route('/health')
 def health_check():
     return jsonify({"status": "healthy"})
-    
+
 @app.route('/')
 def home():
     return '<h1>Quran Bot is running!</h1>'
 
 if __name__ == '__main__':
-    # Yeh code sirf local run ke liye hai, Render ke liye nahi
-    # Gunicorn isko ignore kar dega
-    asyncio.run(application.run_webhook(listen="0.0.0.0", port=int(os.environ.get("PORT", 5000)), url_path=BOT_TOKEN))
+    # Local development ke liye
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
